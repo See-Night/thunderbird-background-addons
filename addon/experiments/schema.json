@@ -1,0 +1,13 @@
+[
+  {
+    "namespace": "backgroundWindow",
+    "functions": [
+      { "name": "start", "type": "function", "async": true, "parameters": [] },
+      { "name": "setTrayAvailable", "type": "function", "async": true,
+        "parameters": [{ "name": "available", "type": "boolean" }] },
+      { "name": "show", "type": "function", "async": true, "parameters": [] },
+      { "name": "hide", "type": "function", "async": true, "parameters": [] },
+      { "name": "quit", "type": "function", "async": true, "parameters": [] }
+    ]
+  }
+]
