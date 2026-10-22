@@ -1,16 +1,18 @@
 # Thunderbird 后台运行（Linux 本地扩展）
 
-为本机 Thunderbird **158.x / GNOME Wayland** 编写。包含一个 Thunderbird Experiment 扩展和一个 Python/Gio 托盘程序，无需 root。兼容范围暂时锁定 158.x，避免 Thunderbird 升级后在未经验证的内部 API 上继续运行。
+当前分支 `compat/thunderbird-156` 面向本机 Thunderbird **156.x / GNOME Wayland**，扩展版本为 **1.1.2**。包含一个 Thunderbird Experiment 扩展和一个 Python/Gio 托盘程序，无需 root。最低版本为 `156.0`，最高版本为 `156.*`，避免 Thunderbird 升级后在未经验证的内部 API 上继续运行。原始 158.x 版本保存在 `main` 分支。
 
 ## 安装
 
 1. 在项目目录运行 `python install.py`，安装当前用户的托盘程序并生成 XPI。如果已经由助手执行过，可跳过这一步。
-2. 打开 Thunderbird → **附加组件和主题** → 齿轮 → **从文件安装附加组件**，选择 `dist/thunderbird-background-1.1.1.xpi`。
+2. 打开 Thunderbird → **附加组件和主题** → 齿轮 → **从文件安装附加组件**，选择 `dist/thunderbird-background-1.1.2.xpi`。
 3. 接受扩展权限，安装后检查顶栏是否出现 Thunderbird 托盘图标。
 
 扩展使用 Experiment API 拦截主窗口关闭和控制原生窗口可见性，因此 Thunderbird 会要求“完全、不受限制地访问 Thunderbird 和您的计算机”。这是内部 API 的权限提示；本项目代码不读取邮件、账户或密码，也不发起网络请求。安装脚本不修改 Thunderbird 首选项，不关闭签名校验，不启用登录自启动，也不替换系统 Thunderbird。
 
 GNOME 需要启用 AppIndicator 扩展。本机已检测到 `appindicatorsupport@rgcjonas.gmail.com` 在启用列表中；仍需在实际桌面上确认它正常工作。托盘不可用时，关闭按钮只会最小化窗口。
+
+若本机已安装本项目的 Python 托盘程序，只需运行 `python install.py --build-only` 生成新 XPI，再从 Thunderbird 中安装。1.1.2 保留原扩展 ID、本地托盘协议和静默启动方式；已有 1.1.1 扩展可以直接更新。
 
 ## 使用
 
@@ -51,7 +53,9 @@ python tests/runtime_startup.py
 
 自动检查覆盖关闭拦截、托盘丢失恢复、多窗口、取消退出、卸载恢复、失败回退、Native Messaging 分帧、DBusMenu 序列化和菜单命令。测试中的桌面服务使用替身，不能代替 Thunderbird 实机检查。
 
-原版关闭到托盘功能已由用户确认正常运行。1.1.1 已使用真实 Thunderbird、一次性本地账户配置通过首次启动和已注册扩展的再次启动测试：只有一个邮件主窗口，保持隐藏，且邮件初始化完成。测试不使用真实账户或邮件。开发沙箱不能连接实际桌面 D-Bus，因此真实 GNOME 托盘的登录显示仍需在桌面确认。通知还取决于现有账户设置和 GNOME 通知设置。
+1.1.2 已核对本机 Thunderbird 156.0 内置的窗口初始化实现，现有静默启动钩子可以继续使用。17 项窗口测试和 9 项 Python 测试全部通过。真实 Thunderbird **156.0** 使用一次性本地账户配置通过首次启动和已注册扩展的再次启动测试：扩展 `isActive=true`、`appDisabled=false`，只有一个邮件主窗口，保持隐藏，且邮件初始化完成。运行时测试使用无桌面模式，不使用真实账户或邮件。
+
+原版关闭到托盘功能已由用户在 158.x 上确认正常运行。156.0 的真实 GNOME 托盘显示、点击恢复和登录自启动仍需在桌面确认；无桌面测试不能替代这些交互检查。通知还取决于现有账户设置和 GNOME 通知设置。
 
 依赖：系统 `/usr/bin/python3`、PyGObject/Gio（Arch 包 `python-gobject`，本机已有）、桌面 StatusNotifierWatcher。仅适用于非 Flatpak/Snap 的原生 Linux Thunderbird；本机为 `/usr/bin/thunderbird`。
 

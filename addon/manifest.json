@@ -1,13 +1,13 @@
 {
   "manifest_version": 2,
   "name": "Thunderbird 后台运行",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "description": "关闭最后一个邮件主窗口时隐藏到 Linux 托盘，保留后台收信；托盘不可用时最小化。",
   "browser_specific_settings": {
     "gecko": {
       "id": "background-local@thunderbird.local",
-      "strict_min_version": "158.0",
-      "strict_max_version": "158.*"
+      "strict_min_version": "156.0",
+      "strict_max_version": "156.*"
     }
   },
   "permissions": ["nativeMessaging"],

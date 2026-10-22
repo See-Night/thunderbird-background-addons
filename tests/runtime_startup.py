@@ -51,7 +51,13 @@ def main():
           stats: this._testStats?.(win),
           hidden: this._testHidden?.has(win) === true};
       });
-      await IOUtils.writeJSON(RESULT_PATH, {windows});
+      const { AddonManager } = ChromeUtils.importESModule('resource://gre/modules/AddonManager.sys.mjs');
+      const addon = await AddonManager.getAddonByID('background-local@thunderbird.local');
+      await IOUtils.writeJSON(RESULT_PATH, {
+        applicationVersion: Services.appinfo.version,
+        addon: {version: addon.version, isActive: addon.isActive, appDisabled: addon.appDisabled},
+        windows,
+      });
     }, 8000);
 """.replace("RESULT_PATH", json.dumps(str(result_file)))
         addon = profile / "extensions/background-local@thunderbird.local.xpi"
@@ -87,6 +93,9 @@ def main():
                         raise AssertionError("No runtime result from Thunderbird")
                     result = json.loads(result_file.read_text())
                     print(json.dumps(result, ensure_ascii=False))
+                    assert result["applicationVersion"].split(".")[0] == "156", "Expected Thunderbird 156.x"
+                    assert result["addon"]["isActive"], "Expected an active add-on"
+                    assert not result["addon"]["appDisabled"], "Add-on disabled by compatibility checks"
                     assert len(result["windows"]) == 1, "Expected exactly one mail window"
                     assert all(result["windows"][0][key] == value for key, value in
                         {"ready": "complete", "initialized": True, "hidden": True}.items())

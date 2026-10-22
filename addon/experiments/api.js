@@ -1,4 +1,4 @@
-/* Local Thunderbird 158 Experiment. No mail content is read or transmitted. */
+/* Local Thunderbird 156 Experiment. No mail content is read or transmitted. */
 var { ExtensionCommon } = ChromeUtils.importESModule(
   "resource://gre/modules/ExtensionCommon.sys.mjs"
 );

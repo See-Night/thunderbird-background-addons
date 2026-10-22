@@ -99,7 +99,9 @@ class HostTests(unittest.TestCase):
     def test_manifest_only_allows_our_addon(self):
         manifest = json.loads((ROOT / "addon/manifest.json").read_text())
         self.assertEqual(manifest["permissions"], ["nativeMessaging"])
-        self.assertEqual(manifest["browser_specific_settings"]["gecko"]["strict_max_version"], "158.*")
+        gecko = manifest["browser_specific_settings"]["gecko"]
+        self.assertEqual(gecko["strict_min_version"], "156.0")
+        self.assertEqual(gecko["strict_max_version"], "156.*")
 
 
 if __name__ == "__main__":
