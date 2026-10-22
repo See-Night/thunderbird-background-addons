@@ -84,6 +84,8 @@ def install_dock_entry(data, launcher):
     entry = desktop_keyfile(source)
     entry.set_string("Desktop Entry", "Exec", f"{desktop_quote(launcher)} %u")
     entry.set_boolean("Desktop Entry", "DBusActivatable", False)
+    # Restoring an existing window does not complete a new startup sequence.
+    entry.set_boolean("Desktop Entry", "StartupNotify", False)
     entry.set_boolean("Desktop Entry", DOCK_MARKER, True)
     write_file(target, entry.to_data()[0])
     print(f"Dock 恢复入口已安装：{target}")
@@ -118,7 +120,7 @@ def install():
         "[Desktop Entry]\nType=Application\nName=Thunderbird 后台运行\n"
         "Comment=打开或恢复 Thunderbird 窗口\n"
         f"Exec={desktop_quote(launcher)}\nIcon=org.mozilla.Thunderbird\nTerminal=false\n"
-        "Categories=Network;Email;\nStartupNotify=true\n")
+        "Categories=Network;Email;\nStartupNotify=false\n")
     install_dock_entry(data, launcher)
     print(f"本地托盘程序已安装：{host}")
     print(f"请在 Thunderbird 的“附加组件和主题 → 齿轮 → 从文件安装附加组件”中选择：\n{output}")

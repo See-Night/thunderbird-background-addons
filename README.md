@@ -38,6 +38,8 @@ GNOME 需要启用 AppIndicator 扩展。本机已检测到 `appindicatorsupport
 
 更新源码后运行 `python3 install.py` 即可启用，无需重新安装 XPI。安装器在当前用户的应用目录创建 `org.mozilla.Thunderbird.desktop`，保留 Dock 固定的应用 ID，将普通点击接到 `show.py`：先向本地托盘程序发送恢复命令，后台实例不可用时正常启动 Thunderbird。原入口的名称、图标、文件关联以及“写邮件”“通讯录”操作保留，链接和文件参数继续传给 Thunderbird。登录自启动仍使用独立的 `autostart.py`，保持静默。
 
+两个手动启动入口均设置 `StartupNotify=false`。GNOME Wayland 仍可能为 Dock 点击创建激活通知，因此 `show.py` 在恢复已有窗口后还会主动通知桌面结束本次启动等待，避免窗口恢复后鼠标仍长时间显示“加载中”。直接启动 Thunderbird 时保留通知，交给 Thunderbird 自身处理。此修复只需重新运行安装器，无需重新安装 XPI。
+
 系统 `/usr/share/applications/` 内的入口不修改。若用户目录原有同名入口，安装前备份到 `~/.local/share/thunderbird-background/dock-original.desktop`，卸载时恢复；卸载时也会移除本项目创建的 Dock 覆盖入口。如果之后手动换成其他入口，卸载会保留该入口。
 
 ## 登录后静默启动
