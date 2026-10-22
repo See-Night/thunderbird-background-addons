@@ -22,7 +22,7 @@ GNOME 需要启用 AppIndicator 扩展。本机已检测到 `appindicatorsupport
 - 其他邮件主窗口仍可正常关闭；写信窗口和草稿提示不受关闭拦截影响。
 - 点击托盘图标或选择“显示 Thunderbird”恢复窗口；右键菜单还提供“隐藏到后台”和“退出 Thunderbird”。
 - 菜单“退出”、`Ctrl+Q`、托盘“退出 Thunderbird”均请求正常退出，保留 Thunderbird 自身的草稿确认流程。
-- 应用列表新增 **Thunderbird 后台运行**，用于打开或恢复隐藏窗口。原来的 Thunderbird 图标也仍然保留。
+- 点击 Dock 中原来的 **Thunderbird** 图标，会先恢复隐藏窗口；没有已连接的后台实例时正常启动雷鸟。应用列表中的 **Thunderbird 后台运行** 入口也可用于恢复。
 - 禁用/卸载扩展、托盘消失或本地程序断开时，扩展会尝试恢复它隐藏的窗口。
 - 这不会让 Thunderbird 在关机、注销、睡眠时收信，也不会替你修改账户的自动收信或新邮件通知设置。
 
@@ -33,6 +33,12 @@ GNOME 需要启用 AppIndicator 扩展。本机已检测到 `appindicatorsupport
 ```
 
 多 Thunderbird 实例同时运行时，恢复命令会恢复所有已连接的实例。托盘各自控制其对应的实例。托盘图标暂不显示未读数量。
+
+## 从 Dock 恢复窗口
+
+更新源码后运行 `python3 install.py` 即可启用，无需重新安装 XPI。安装器在当前用户的应用目录创建 `org.mozilla.Thunderbird.desktop`，保留 Dock 固定的应用 ID，将普通点击接到 `show.py`：先向本地托盘程序发送恢复命令，后台实例不可用时正常启动 Thunderbird。原入口的名称、图标、文件关联以及“写邮件”“通讯录”操作保留，链接和文件参数继续传给 Thunderbird。登录自启动仍使用独立的 `autostart.py`，保持静默。
+
+系统 `/usr/share/applications/` 内的入口不修改。若用户目录原有同名入口，安装前备份到 `~/.local/share/thunderbird-background/dock-original.desktop`，卸载时恢复；卸载时也会移除本项目创建的 Dock 覆盖入口。如果之后手动换成其他入口，卸载会保留该入口。
 
 ## 登录后静默启动
 
@@ -71,4 +77,4 @@ python tests/runtime_startup.py
 python install.py --uninstall
 ```
 
-只移除本项目安装的本地程序、两个 Native Messaging 清单、新增应用入口和本项目的登录自启动项。源码、备份与 XPI 保留。
+移除本项目安装的本地程序、两个 Native Messaging 清单、新增应用入口和本项目的登录自启动项，并恢复安装前的 Dock 入口。源码、其他备份与 XPI 保留。

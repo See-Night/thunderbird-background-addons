@@ -10,6 +10,8 @@ import zipfile
 ROOT = Path(__file__).resolve().parent
 NAME = "local.thunderbird_background"
 ADDON_ID = "background-local@thunderbird.local"
+DESKTOP_ID = "org.mozilla.Thunderbird.desktop"
+DOCK_MARKER = "X-Thunderbird-Background"
 
 
 def locations():
@@ -43,6 +45,61 @@ def desktop_quote(value):
     return '"' + str(value).replace("\\", "\\\\").replace('"', '\\"').replace("`", "\\`").replace("$", "\\$").replace("%", "%%") + '"'
 
 
+def desktop_keyfile(path):
+    from gi.repository import GLib
+    entry = GLib.KeyFile()
+    entry.load_from_file(str(path), GLib.KeyFileFlags.KEEP_COMMENTS | GLib.KeyFileFlags.KEEP_TRANSLATIONS)
+    return entry
+
+
+def managed_desktop(path):
+    from gi.repository import GLib
+    if not path.is_file():
+        return False
+    try:
+        return desktop_keyfile(path).get_boolean("Desktop Entry", DOCK_MARKER)
+    except GLib.Error:
+        return False
+
+
+def install_dock_entry(data, launcher):
+    target = data / "applications" / DESKTOP_ID
+    backup = launcher.parent / "dock-original.desktop"
+    if target.exists() and not managed_desktop(target):
+        if backup.exists():
+            raise RuntimeError(f"保留现有启动入口和备份，请先检查：{target}、{backup}")
+        backup.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(target, backup)
+    source = backup if backup.exists() else None
+    if source is None:
+        for directory in os.environ.get("XDG_DATA_DIRS", "/usr/local/share:/usr/share").split(":"):
+            if directory:
+                candidate = Path(directory) / "applications" / DESKTOP_ID
+                if candidate.is_file() and candidate != target:
+                    source = candidate
+                    break
+    if source is None:
+        print("未找到原生 Thunderbird 桌面入口，保留单独的“Thunderbird 后台运行”入口。")
+        return
+    entry = desktop_keyfile(source)
+    entry.set_string("Desktop Entry", "Exec", f"{desktop_quote(launcher)} %u")
+    entry.set_boolean("Desktop Entry", "DBusActivatable", False)
+    entry.set_boolean("Desktop Entry", DOCK_MARKER, True)
+    write_file(target, entry.to_data()[0])
+    print(f"Dock 恢复入口已安装：{target}")
+
+
+def uninstall_dock_entry(data):
+    target = data / "applications" / DESKTOP_ID
+    backup = data / "thunderbird-background/dock-original.desktop"
+    if managed_desktop(target):
+        if backup.exists():
+            shutil.copy2(backup, target)
+            backup.unlink()
+        else:
+            target.unlink()
+
+
 def install():
     import gi
     gi.require_version("Gio", "2.0")
@@ -55,16 +112,14 @@ def install():
         "path": str(host), "type": "stdio", "allowed_extensions": [ADDON_ID]}, indent=2) + "\n"
     for directory in manifests:
         write_file(directory / f"{NAME}.json", manifest)
-    thunderbird = shutil.which("thunderbird") or "/usr/bin/thunderbird"
     launcher = host.parent / "show.py"
-    write_file(launcher, "#!/usr/bin/python3\nimport os, subprocess\n"
-        f"if subprocess.run([{str(host)!r}, '--show'], check=False).returncode:\n"
-        f"    os.execv({thunderbird!r}, [{thunderbird!r}])\n", 0o755)
+    write_file(launcher, (ROOT / "native/show.py").read_text(), 0o755)
     write_file(data / "applications/thunderbird-background.desktop",
         "[Desktop Entry]\nType=Application\nName=Thunderbird 后台运行\n"
         "Comment=打开或恢复 Thunderbird 窗口\n"
         f"Exec={desktop_quote(launcher)}\nIcon=org.mozilla.Thunderbird\nTerminal=false\n"
         "Categories=Network;Email;\nStartupNotify=true\n")
+    install_dock_entry(data, launcher)
     print(f"本地托盘程序已安装：{host}")
     print(f"请在 Thunderbird 的“附加组件和主题 → 齿轮 → 从文件安装附加组件”中选择：\n{output}")
     print("扩展安装后才会生效。未修改邮件账户、Thunderbird 首选项或登录自启动设置。")
@@ -72,6 +127,7 @@ def install():
 
 def uninstall():
     data, manifests = locations()
+    uninstall_dock_entry(data)
     for directory in manifests:
         (directory / f"{NAME}.json").unlink(missing_ok=True)
     (data / "applications/thunderbird-background.desktop").unlink(missing_ok=True)
