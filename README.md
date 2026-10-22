@@ -1,18 +1,20 @@
 # Thunderbird 后台运行（Linux 本地扩展）
 
-当前分支 `compat/thunderbird-156` 面向本机 Thunderbird **156.x / GNOME Wayland**，扩展版本为 **1.1.2**。包含一个 Thunderbird Experiment 扩展和一个 Python/Gio 托盘程序，无需 root。最低版本为 `156.0`，最高版本为 `156.*`，避免 Thunderbird 升级后在未经验证的内部 API 上继续运行。原始 158.x 版本保存在 `main` 分支。
+当前分支 `compat/thunderbird-156` 面向 Thunderbird **156.0 及以上版本 / GNOME Wayland**，扩展版本为 **1.1.3**。包含一个 Thunderbird Experiment 扩展和一个 Python/Gio 托盘程序，无需 root。最低版本为 `156.0`，最高版本设为 `*`，同一个 XPI 可以安装到 156、157、158 及后续版本。原始 158.x 版本保存在 `main` 分支。
+
+版本上限放开表示允许安装和启用，不代表已验证未来所有版本。扩展依赖 Thunderbird 内部 Experiment API，后续版本可能需要适配。官方的[扩展指南](https://developer.thunderbird.net/add-ons/mailextensions)通常建议此类扩展设置版本上限；本项目按本地使用需求取消上限，实际验证范围见下文。
 
 ## 安装
 
 1. 在项目目录运行 `python install.py`，安装当前用户的托盘程序并生成 XPI。如果已经由助手执行过，可跳过这一步。
-2. 打开 Thunderbird → **附加组件和主题** → 齿轮 → **从文件安装附加组件**，选择 `dist/thunderbird-background-1.1.2.xpi`。
+2. 打开 Thunderbird → **附加组件和主题** → 齿轮 → **从文件安装附加组件**，选择 `dist/thunderbird-background-1.1.3.xpi`。
 3. 接受扩展权限，安装后检查顶栏是否出现 Thunderbird 托盘图标。
 
 扩展使用 Experiment API 拦截主窗口关闭和控制原生窗口可见性，因此 Thunderbird 会要求“完全、不受限制地访问 Thunderbird 和您的计算机”。这是内部 API 的权限提示；本项目代码不读取邮件、账户或密码，也不发起网络请求。安装脚本不修改 Thunderbird 首选项，不关闭签名校验，不启用登录自启动，也不替换系统 Thunderbird。
 
 GNOME 需要启用 AppIndicator 扩展。本机已检测到 `appindicatorsupport@rgcjonas.gmail.com` 在启用列表中；仍需在实际桌面上确认它正常工作。托盘不可用时，关闭按钮只会最小化窗口。
 
-若本机已安装本项目的 Python 托盘程序，只需运行 `python install.py --build-only` 生成新 XPI，再从 Thunderbird 中安装。1.1.2 保留原扩展 ID、本地托盘协议和静默启动方式；已有 1.1.1 扩展可以直接更新。
+若本机已安装本项目的 Python 托盘程序，只需运行 `python install.py --build-only` 生成新 XPI，再从 Thunderbird 中安装。1.1.3 保留原扩展 ID、本地托盘协议和静默启动方式；已有 1.1.1 或 1.1.2 扩展可以直接更新。
 
 ## 使用
 
@@ -53,9 +55,9 @@ python tests/runtime_startup.py
 
 自动检查覆盖关闭拦截、托盘丢失恢复、多窗口、取消退出、卸载恢复、失败回退、Native Messaging 分帧、DBusMenu 序列化和菜单命令。测试中的桌面服务使用替身，不能代替 Thunderbird 实机检查。
 
-1.1.2 已核对本机 Thunderbird 156.0 内置的窗口初始化实现，现有静默启动钩子可以继续使用。17 项窗口测试和 9 项 Python 测试全部通过。真实 Thunderbird **156.0** 使用一次性本地账户配置通过首次启动和已注册扩展的再次启动测试：扩展 `isActive=true`、`appDisabled=false`，只有一个邮件主窗口，保持隐藏，且邮件初始化完成。运行时测试使用无桌面模式，不使用真实账户或邮件。
+1.1.3 沿用已核对本机 Thunderbird 156.0 内置实现的静默启动钩子。17 项窗口测试和 9 项 Python 测试全部通过。真实 Thunderbird **156.0** 使用一次性本地账户配置通过首次启动和已注册扩展的再次启动测试：扩展 `isActive=true`、`appDisabled=false`，只有一个邮件主窗口，保持隐藏，且邮件初始化完成。运行时测试使用无桌面模式，不使用真实账户或邮件；测试脚本通过扩展自身的启用状态检查版本兼容性，不再固定要求 156.x。
 
-原版关闭到托盘功能已由用户在 158.x 上确认正常运行。156.0 的真实 GNOME 托盘显示、点击恢复和登录自启动仍需在桌面确认；无桌面测试不能替代这些交互检查。通知还取决于现有账户设置和 GNOME 通知设置。
+原版关闭到托盘功能已由用户在 158.x 上确认正常运行，1.1.3 保持相同的窗口控制逻辑。本次没有重新实测 157、158 或更高版本。156.0 的真实 GNOME 托盘显示、点击恢复和登录自启动仍需在桌面确认；无桌面测试不能替代这些交互检查。通知还取决于现有账户设置和 GNOME 通知设置。
 
 依赖：系统 `/usr/bin/python3`、PyGObject/Gio（Arch 包 `python-gobject`，本机已有）、桌面 StatusNotifierWatcher。仅适用于非 Flatpak/Snap 的原生 Linux Thunderbird；本机为 `/usr/bin/thunderbird`。
 

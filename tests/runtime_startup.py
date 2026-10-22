@@ -93,7 +93,6 @@ def main():
                         raise AssertionError("No runtime result from Thunderbird")
                     result = json.loads(result_file.read_text())
                     print(json.dumps(result, ensure_ascii=False))
-                    assert result["applicationVersion"].split(".")[0] == "156", "Expected Thunderbird 156.x"
                     assert result["addon"]["isActive"], "Expected an active add-on"
                     assert not result["addon"]["appDisabled"], "Add-on disabled by compatibility checks"
                     assert len(result["windows"]) == 1, "Expected exactly one mail window"

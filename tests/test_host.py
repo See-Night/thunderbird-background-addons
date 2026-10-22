@@ -101,7 +101,7 @@ class HostTests(unittest.TestCase):
         self.assertEqual(manifest["permissions"], ["nativeMessaging"])
         gecko = manifest["browser_specific_settings"]["gecko"]
         self.assertEqual(gecko["strict_min_version"], "156.0")
-        self.assertEqual(gecko["strict_max_version"], "156.*")
+        self.assertEqual(gecko["strict_max_version"], "*")
 
 
 if __name__ == "__main__":
