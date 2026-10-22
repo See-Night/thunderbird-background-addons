@@ -32,6 +32,9 @@ var backgroundWindow = class extends ExtensionCommon.ExtensionAPI {
     let quitGranted = false;
     const startupWindows = new Set();
     const initializationTimers = new Map();
+    let mailUtils = null;
+    let originalDisplayMessage = null;
+    let displayMessage = null;
     let quietLaunch = false;
     let waitingForTray = false;
     let startupTimer = null;
@@ -196,6 +199,9 @@ var backgroundWindow = class extends ExtensionCommon.ExtensionAPI {
         Services.obs.removeObserver(quitObserver, "quit-application-requested");
         Services.obs.removeObserver(quitObserver, "quit-application-granted");
         Services.obs.removeObserver(startupDocumentObserver, "chrome-document-loaded");
+        if (mailUtils?.displayMessageInFolderTab === displayMessage) {
+          mailUtils.displayMessageInFolderTab = originalDisplayMessage;
+        }
         stopQuietLaunch();
         for (const timer of initializationTimers.values()) { clearTimeout(timer); }
         initializationTimers.clear();
@@ -223,6 +229,25 @@ var backgroundWindow = class extends ExtensionCommon.ExtensionAPI {
           Services.obs.addObserver(quitObserver, "quit-application-requested");
           Services.obs.addObserver(quitObserver, "quit-application-granted");
           Services.obs.addObserver(startupDocumentObserver, "chrome-document-loaded");
+          // System and Thunderbird's own mail alerts both use this entry point.
+          // Their existing callbacks (including already displayed alerts) look
+          // up the method on MailUtils at click time. Preserve message routing,
+          // preferences, arguments, receiver and return value.
+          try {
+            ({ MailUtils: mailUtils } = ChromeUtils.importESModule("resource:///modules/MailUtils.sys.mjs"));
+            originalDisplayMessage = mailUtils.displayMessageInFolderTab;
+            if (typeof originalDisplayMessage === "function") {
+              displayMessage = function (...args) {
+                const win = Services.wm.getMostRecentWindow("mail:3pane");
+                if (started && !quitting && win && hidden.has(win)) {
+                  stopQuietLaunch();
+                  try { restore(win); } catch (error) { console.error(error); }
+                }
+                return originalDisplayMessage.apply(this, args);
+              };
+              mailUtils.displayMessageInFolderTab = displayMessage;
+            }
+          } catch (error) { console.error(error); }
           if (Services.env.get("THUNDERBIRD_BACKGROUND_AUTOSTART") === "1") {
             Services.env.set("THUNDERBIRD_BACKGROUND_AUTOSTART", "");
             quietLaunch = true;

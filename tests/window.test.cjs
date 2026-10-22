@@ -11,6 +11,15 @@ function harness(types = ["mail:3pane"], quiet = false, earlyStartup = false) {
   const queue = [];
   const timers = new Map();
   const environment = new Map(quiet ? [["THUNDERBIRD_BACKGROUND_AUTOSTART", "1"]] : []);
+  const displayCalls = [];
+  const displayResult = {};
+  const mailUtils = {
+    displayMessageInFolderTab(...args) {
+      displayCalls.push({ receiver: this, args, visible: windows.at(-1)?.base.visibility });
+      return displayResult;
+    },
+  };
+  const originalDisplayMessage = mailUtils.displayMessageInFolderTab;
   function createWindow(type = "mail:3pane") {
     const handlers = new Map();
     const base = { visibility: true };
@@ -37,6 +46,7 @@ function harness(types = ["mail:3pane"], quiet = false, earlyStartup = false) {
   const windows = types.map(createWindow);
   const scope = {
     ChromeUtils: { importESModule(name) {
+      if (name.includes("MailUtils.sys.mjs")) { return { MailUtils: mailUtils }; }
       if (name.includes("Timer.sys.mjs")) {
         return { setTimeout(fn) { const id = {}; timers.set(id, fn); return id; },
           clearTimeout(id) { timers.delete(id); } };
@@ -81,6 +91,7 @@ function harness(types = ["mail:3pane"], quiet = false, earlyStartup = false) {
   if (earlyStartup) { instance.onStartup(); }
   const api = instance.getAPI({ callOnClose(value) { cleanup = value; } }).backgroundWindow;
   return { api, windows, createWindow, observers, queue, notifyQuit, timers, environment,
+    mailUtils, displayCalls, displayResult, originalDisplayMessage,
     cleanup: () => cleanup.close(), addWindow(win) {
       windows.push(win);
       watcher.onOpenWindow({ docShell: { domWindow: win } });
@@ -256,4 +267,46 @@ test("a native window created before the startup hook is still initialized", asy
   win.emit("load");
   assert.equal(win.base.visibility, false);
   assert.equal(win.closeEvent().prevented, true);
+});
+test("a notification restores the hidden window before dispatching its message", async () => {
+  const h = harness(); await h.api.start(); await h.api.setTrayAvailable(true);
+  const win = h.windows[0]; win.closeEvent();
+  const message = { fixture: "notification-message" };
+  const result = h.mailUtils.displayMessageInFolderTab(message, true);
+  assert.equal(win.base.visibility, true);
+  assert.ok(win.focused);
+  assert.equal(result, h.displayResult);
+  assert.equal(h.displayCalls.length, 1);
+  assert.equal(h.displayCalls[0].receiver, h.mailUtils);
+  assert.equal(h.displayCalls[0].args[0], message);
+  assert.equal(h.displayCalls[0].args[1], true);
+  assert.equal(h.displayCalls[0].visible, true);
+});
+test("notification restoration cancels pending quiet-start hiding", async () => {
+  const h = harness([], true, true); const win = openMailWindow(h);
+  h.mailUtils.displayMessageInFolderTab({}, true);
+  assert.equal(h.timers.size, 0);
+  win.emit("load");
+  await h.api.setTrayAvailable(true);
+  assert.equal(win.base.visibility, true);
+});
+test("visible windows and the no-main-window path retain the normal behavior", async () => {
+  const h = harness(); await h.api.start();
+  h.mailUtils.displayMessageInFolderTab({}, false);
+  assert.equal(h.windows[0].focused, false);
+  h.windows[0].closed = true;
+  h.mailUtils.displayMessageInFolderTab({}, true);
+  assert.equal(h.displayCalls.length, 2);
+});
+test("disabling removes the notification hook without clobbering other extensions", async () => {
+  const h = harness(); await h.api.start(); h.cleanup();
+  assert.equal(h.mailUtils.displayMessageInFolderTab, h.originalDisplayMessage);
+  const other = harness(); await other.api.start();
+  const wrapper = other.mailUtils.displayMessageInFolderTab;
+  const laterWrapper = function (...args) { return wrapper.apply(this, args); };
+  other.mailUtils.displayMessageInFolderTab = laterWrapper;
+  other.cleanup();
+  assert.equal(other.mailUtils.displayMessageInFolderTab, laterWrapper);
+  other.mailUtils.displayMessageInFolderTab({}, true);
+  assert.equal(other.displayCalls.length, 1);
 });

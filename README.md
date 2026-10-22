@@ -7,7 +7,7 @@
 ## 安装
 
 1. 在项目目录运行 `python install.py`，安装当前用户的托盘程序并生成 XPI。如果已经由助手执行过，可跳过这一步。
-2. 打开 Thunderbird → **附加组件和主题** → 齿轮 → **从文件安装附加组件**，选择 `dist/thunderbird-background-1.1.3.xpi`。
+2. 打开 Thunderbird → **附加组件和主题** → 齿轮 → **从文件安装附加组件**，选择 `dist/thunderbird-background-1.1.4.xpi`。
 3. 接受扩展权限，安装后检查顶栏是否出现 Thunderbird 托盘图标。
 
 扩展使用 Experiment API 拦截主窗口关闭和控制原生窗口可见性，因此 Thunderbird 会要求“完全、不受限制地访问 Thunderbird 和您的计算机”。这是内部 API 的权限提示；本项目代码不读取邮件、账户或密码，也不发起网络请求。安装脚本不修改 Thunderbird 首选项，不关闭签名校验，不启用登录自启动，也不替换系统 Thunderbird。
@@ -21,6 +21,7 @@ GNOME 需要启用 AppIndicator 扩展。本机已检测到 `appindicatorsupport
 - 点最后一个邮件主窗口的 **×**：有托盘时隐藏窗口并保留 Thunderbird 进程，后台收信、已有通知设置继续由 Thunderbird 负责；没有托盘时最小化。
 - 其他邮件主窗口仍可正常关闭；写信窗口和草稿提示不受关闭拦截影响。
 - 点击托盘图标或选择“显示 Thunderbird”恢复窗口；右键菜单还提供“隐藏到后台”和“退出 Thunderbird”。
+- 点击邮件通知正文时，先恢复通知所使用的隐藏主窗口，再由 Thunderbird 按原有设置打开对应邮件。通知中的“标为已读”“删除”等操作按钮继续执行各自的动作。
 - 菜单“退出”、`Ctrl+Q`、托盘“退出 Thunderbird”均请求正常退出，保留 Thunderbird 自身的草稿确认流程。
 - 点击 Dock 中原来的 **Thunderbird** 图标，会先恢复隐藏窗口；没有已连接的后台实例时正常启动雷鸟。应用列表中的 **Thunderbird 后台运行** 入口也可用于恢复。
 - 禁用/卸载扩展、托盘消失或本地程序断开时，扩展会尝试恢复它隐藏的窗口。
@@ -59,13 +60,18 @@ node tests/window.test.cjs
 python -m unittest discover -s tests -p 'test_*.py' -v
 python install.py --build-only
 python tests/runtime_startup.py
+TBBG_TEST_NOTIFICATION=1 python tests/runtime_startup.py
 ```
 
 自动检查覆盖关闭拦截、托盘丢失恢复、多窗口、取消退出、卸载恢复、失败回退、Native Messaging 分帧、DBusMenu 序列化和菜单命令。测试中的桌面服务使用替身，不能代替 Thunderbird 实机检查。
 
 1.1.3 沿用已核对本机 Thunderbird 156.0 内置实现的静默启动钩子。17 项窗口测试和 9 项 Python 测试全部通过。真实 Thunderbird **156.0** 使用一次性本地账户配置通过首次启动和已注册扩展的再次启动测试：扩展 `isActive=true`、`appDisabled=false`，只有一个邮件主窗口，保持隐藏，且邮件初始化完成。运行时测试使用无桌面模式，不使用真实账户或邮件；测试脚本通过扩展自身的启用状态检查版本兼容性，不再固定要求 156.x。
 
-原版关闭到托盘功能已由用户在 158.x 上确认正常运行，1.1.3 保持相同的窗口控制逻辑。本次没有重新实测 157、158 或更高版本。156.0 的真实 GNOME 托盘显示、点击恢复和登录自启动仍需在桌面确认；无桌面测试不能替代这些交互检查。通知还取决于现有账户设置和 GNOME 通知设置。
+原版关闭到托盘功能已由用户在 158.x 上确认正常运行，1.1.3 保持相同的窗口控制逻辑。1.1.3 当时没有重新实测 157、158 或更高版本。156.0 的真实 GNOME 托盘显示、点击恢复和登录自启动仍需在桌面确认；无桌面测试不能替代这些交互检查。通知还取决于现有账户设置和 GNOME 通知设置。
+
+1.1.4 修复点击邮件通知无法恢复隐藏窗口的问题：在 `MailUtils.displayMessageInFolderTab` 入口恢复目标窗口，再调用原方法，保留选中邮件、消息窗格设置和返回值。禁用扩展时移除该钩子。21 项窗口测试通过；真实 Thunderbird **158.0** 使用隔离配置，通过首次启动、已注册扩展的再次启动及两次通知点击测试。通知测试在临时本地文件夹生成测试邮件，取得 `MailNotificationManager` 创建的真实点击回调并调用，确认窗口解除隐藏且对应邮件已被选中；不读取真实邮件，也不向桌面发送测试通知。
+
+本机已备份并更新至 1.1.4，正常退出后完成静默重启，确认扩展处于启用状态且本地托盘程序已运行。更新备份位于 `~/.local/share/thunderbird-background/backups/*-update/`。`update_installed.py` 只更新这个扩展的 XPI、版本记录和对应启动缓存条目，不清空整个启动缓存；运行中的 Thunderbird 通过正常退出命令关闭，遇到草稿确认未完成时停止更新。
 
 依赖：系统 `/usr/bin/python3`、PyGObject/Gio（Arch 包 `python-gobject`，本机已有）、桌面 StatusNotifierWatcher。仅适用于非 Flatpak/Snap 的原生 Linux Thunderbird；本机为 `/usr/bin/thunderbird`。
 

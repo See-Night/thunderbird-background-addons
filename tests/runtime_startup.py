@@ -41,6 +41,7 @@ def main():
             f"user_pref({json.dumps(k)}, {json.dumps(v)});" for k, v in preferences.items()))
         result_file = profile / "runtime-result.json"
         probe = """  onStartup() {
+    NOTIFICATION_PROBE
     const { setTimeout } = ChromeUtils.importESModule('resource://gre/modules/Timer.sys.mjs');
     setTimeout(async () => {
       const windows = [...Services.wm.getEnumerator('mail:3pane')].map(win => {
@@ -53,13 +54,19 @@ def main():
       });
       const { AddonManager } = ChromeUtils.importESModule('resource://gre/modules/AddonManager.sys.mjs');
       const addon = await AddonManager.getAddonByID('background-local@thunderbird.local');
+      let notification = null;
+      if (Services.env.get('TBBG_TEST_NOTIFICATION') === '1') {
+        notification = await checkNotificationClick(this);
+      }
       await IOUtils.writeJSON(RESULT_PATH, {
         applicationVersion: Services.appinfo.version,
         addon: {version: addon.version, isActive: addon.isActive, appDisabled: addon.appDisabled},
         windows,
+        notification,
       });
     }, 8000);
-""".replace("RESULT_PATH", json.dumps(str(result_file)))
+""".replace("RESULT_PATH", json.dumps(str(result_file))).replace(
+            "NOTIFICATION_PROBE", (ROOT / "tests/notification_probe.js").read_text())
         addon = profile / "extensions/background-local@thunderbird.local.xpi"
         with zipfile.ZipFile(addon, "w", zipfile.ZIP_DEFLATED) as archive:
             for path in (ROOT / "addon").rglob("*"):
@@ -99,6 +106,11 @@ def main():
                     assert all(result["windows"][0][key] == value for key, value in
                         {"ready": "complete", "initialized": True, "hidden": True}.items())
                     print("Actual Thunderbird startup: one hidden, initialized mail window — PASS")
+                    if environment.get("TBBG_TEST_NOTIFICATION") == "1":
+                        assert result["notification"] == {
+                            "hiddenBefore": True, "hiddenAfter": False, "selectedMessageCorrect": True,
+                        }, "Notification did not restore the window and select its message"
+                        print("Actual mail notification callback: restored window and selected message — PASS")
                     capture = os.environ.get("TBBG_TEST_CAPTURE")
                     if capture:
                         destination = Path(capture)
