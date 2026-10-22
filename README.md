@@ -1,6 +1,6 @@
 # Thunderbird 后台运行（Linux 本地扩展）
 
-当前分支 `compat/thunderbird-156` 面向 Thunderbird **156.0 及以上版本 / GNOME Wayland**，扩展版本为 **1.1.3**。包含一个 Thunderbird Experiment 扩展和一个 Python/Gio 托盘程序，无需 root。最低版本为 `156.0`，最高版本设为 `*`，同一个 XPI 可以安装到 156、157、158 及后续版本。原始 158.x 版本保存在 `main` 分支。
+当前版本面向 Thunderbird **156.0 及以上版本 / GNOME Wayland**，扩展版本为 **1.1.3**。包含一个 Thunderbird Experiment 扩展和一个 Python/Gio 托盘程序，无需 root。最低版本为 `156.0`，最高版本设为 `*`，同一个 XPI 可以安装到 156、157、158 及后续版本。原始 158.x 版本保存在 Git 提交 `a833749` 中。
 
 版本上限放开表示允许安装和启用，不代表已验证未来所有版本。扩展依赖 Thunderbird 内部 Experiment API，后续版本可能需要适配。官方的[扩展指南](https://developer.thunderbird.net/add-ons/mailextensions)通常建议此类扩展设置版本上限；本项目按本地使用需求取消上限，实际验证范围见下文。
 
