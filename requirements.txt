@@ -1,0 +1,1 @@
+PyGObject-stubs==2.20.0 --config-settings=config=Gtk3,Gdk3
