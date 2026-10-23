@@ -1,14 +1,13 @@
-#!/usr/bin/python3
 """Run actual Thunderbird with a disposable local-only account and no desktop."""
 import json
 import os
-from pathlib import Path
-import signal
 import shutil
+import signal
 import subprocess
 import tempfile
 import time
 import zipfile
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 

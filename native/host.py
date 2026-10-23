@@ -6,16 +6,18 @@ Native messaging stdout is reserved for length-prefixed JSON. No mail is read.
 import argparse
 import json
 import os
-from pathlib import Path
 import socket
 import stat
 import struct
 import sys
 import threading
+from pathlib import Path
+from typing import ClassVar
 
 import gi
+
 gi.require_version("Gio", "2.0")
-from gi.repository import Gio, GLib
+from gi.repository import Gio, GLib  # pyright: ignore[reportMissingModuleSource]
 
 SNI_XML = """<node><interface name="org.kde.StatusNotifierItem">
  <method name="Activate"><arg type="i" direction="in"/><arg type="i" direction="in"/></method>
@@ -91,18 +93,18 @@ def socket_dir():
 
 
 class Host:
-    ITEMS = {1: ("显示 Thunderbird", "show"),
-             2: ("隐藏到后台", "hide"), 3: ("退出 Thunderbird", "quit")}
+    ITEMS: ClassVar[dict[int, tuple[str, str]]] = {1: ("Show Thunderbird", "show"),
+             2: ("Hide to Background", "hide"), 3: ("Quit Thunderbird", "quit")}
 
     def __init__(self):
         self.loop = GLib.MainLoop()
-        self.connection = None
-        self.registrations = []
-        self.watcher = None
-        self.listener = None
-        self.socket_path = None
+        self.connection: Gio.DBusConnection | None = None
+        self.registrations: list[int] = []
+        self.watcher: int | None = None
+        self.listener: socket.socket | None = None
+        self.socket_path: Path | None = None
         self.generation = 0
-        self.watcher_owner = None
+        self.watcher_owner: str | None = None
 
     def send(self, action, **extra):
         try:
@@ -167,13 +169,13 @@ class Host:
                     "Status": GLib.Variant("s", "normal"), "IconThemePath": GLib.Variant("as", [])}[name]
         props = {
             "Category": ("s", "Communications"), "Id": ("s", "thunderbird-background"),
-            "Title": ("s", "Thunderbird 后台运行"), "Status": ("s", "Active"),
+            "Title": ("s", "Thunderbird Background"), "Status": ("s", "Active"),
             "WindowId": ("u", 0), "IconName": ("s", "org.mozilla.Thunderbird"), "IconThemePath": ("s", ""),
             "IconPixmap": ("a(iiay)", []), "AttentionIconName": ("s", ""),
             "AttentionIconPixmap": ("a(iiay)", []), "OverlayIconName": ("s", ""),
             "OverlayIconPixmap": ("a(iiay)", []), "ItemIsMenu": ("b", False),
             "Menu": ("o", "/MenuBar"),
-            "ToolTip": ("(sa(iiay)ss)", ("org.mozilla.Thunderbird", [], "Thunderbird", "后台收信 · 点击显示 · 右键菜单退出")),
+            "ToolTip": ("(sa(iiay)ss)", ("org.mozilla.Thunderbird", [], "Thunderbird", "Receiving mail in the background; click to show; right-click for the quit menu")),
         }
         return GLib.Variant(*props[name])
 
@@ -184,7 +186,7 @@ class Host:
         self.register_watcher(generation)
 
     def register_watcher(self, generation):
-        if generation != self.generation or not self.watcher_owner:
+        if generation != self.generation or not self.watcher_owner or self.connection is None:
             return GLib.SOURCE_REMOVE
 
         def registered(connection, result):
@@ -218,9 +220,12 @@ class Host:
             GLib.idle_add(self.loop.quit)
 
     def socket_reader(self):
+        listener = self.listener
+        if listener is None:
+            return
         while True:
             try:
-                client, _ = self.listener.accept()
+                client, _ = listener.accept()
             except OSError:
                 return
             with client:
@@ -273,8 +278,9 @@ class Host:
         finally:
             if self.watcher:
                 Gio.bus_unwatch_name(self.watcher)
-            for registration in self.registrations:
-                self.connection.unregister_object(registration)
+            if self.connection is not None:
+                for registration in self.registrations:
+                    self.connection.unregister_object(registration)
             if self.listener:
                 self.listener.close()
             if self.socket_path:

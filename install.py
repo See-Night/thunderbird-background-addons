@@ -2,10 +2,10 @@
 """Build the XPI and install the per-user Linux companion. No sudo needed."""
 import json
 import os
-from pathlib import Path
 import shutil
 import sys
 import zipfile
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 NAME = "local.thunderbird_background"
@@ -46,14 +46,14 @@ def desktop_quote(value):
 
 
 def desktop_keyfile(path):
-    from gi.repository import GLib
+    from gi.repository import GLib  # pyright: ignore[reportMissingModuleSource]
     entry = GLib.KeyFile()
     entry.load_from_file(str(path), GLib.KeyFileFlags.KEEP_COMMENTS | GLib.KeyFileFlags.KEEP_TRANSLATIONS)
     return entry
 
 
 def managed_desktop(path):
-    from gi.repository import GLib
+    from gi.repository import GLib  # pyright: ignore[reportMissingModuleSource]
     if not path.is_file():
         return False
     try:
@@ -67,7 +67,7 @@ def install_dock_entry(data, launcher):
     backup = launcher.parent / "dock-original.desktop"
     if target.exists() and not managed_desktop(target):
         if backup.exists():
-            raise RuntimeError(f"保留现有启动入口和备份，请先检查：{target}、{backup}")
+            raise RuntimeError(f"Existing launcher and backup preserved; check these files first: {target}, {backup}")
         backup.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(target, backup)
     source = backup if backup.exists() else None
@@ -79,7 +79,7 @@ def install_dock_entry(data, launcher):
                     source = candidate
                     break
     if source is None:
-        print("未找到原生 Thunderbird 桌面入口，保留单独的“Thunderbird 后台运行”入口。")
+        print('No native Thunderbird desktop entry found; keeping the separate "Thunderbird Background" entry.')
         return
     entry = desktop_keyfile(source)
     entry.set_string("Desktop Entry", "Exec", f"{desktop_quote(launcher)} %u")
@@ -88,7 +88,7 @@ def install_dock_entry(data, launcher):
     entry.set_boolean("Desktop Entry", "StartupNotify", False)
     entry.set_boolean("Desktop Entry", DOCK_MARKER, True)
     write_file(target, entry.to_data()[0])
-    print(f"Dock 恢复入口已安装：{target}")
+    print(f"Dock restore entry installed: {target}")
 
 
 def uninstall_dock_entry(data):
@@ -117,14 +117,14 @@ def install():
     launcher = host.parent / "show.py"
     write_file(launcher, (ROOT / "native/show.py").read_text(), 0o755)
     write_file(data / "applications/thunderbird-background.desktop",
-        "[Desktop Entry]\nType=Application\nName=Thunderbird 后台运行\n"
-        "Comment=打开或恢复 Thunderbird 窗口\n"
+        "[Desktop Entry]\nType=Application\nName=Thunderbird Background\n"
+        "Comment=Open or restore Thunderbird windows\n"
         f"Exec={desktop_quote(launcher)}\nIcon=org.mozilla.Thunderbird\nTerminal=false\n"
         "Categories=Network;Email;\nStartupNotify=false\n")
     install_dock_entry(data, launcher)
-    print(f"本地托盘程序已安装：{host}")
-    print(f"请在 Thunderbird 的“附加组件和主题 → 齿轮 → 从文件安装附加组件”中选择：\n{output}")
-    print("扩展安装后才会生效。未修改邮件账户、Thunderbird 首选项或登录自启动设置。")
+    print(f"Local tray companion installed: {host}")
+    print(f"In Thunderbird, open Add-ons and Themes -> gear icon -> Install Add-on From File, and select:\n{output}")
+    print("Changes take effect after installing the extension. Mail accounts, Thunderbird preferences, and login autostart settings were not modified.")
 
 
 def uninstall():
@@ -137,7 +137,7 @@ def uninstall():
         (data / "thunderbird-background" / name).unlink(missing_ok=True)
     (Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) /
         "autostart/thunderbird-background.desktop").unlink(missing_ok=True)
-    print("本地托盘程序和启动入口已移除。请在 Thunderbird 中移除“Thunderbird 后台运行”扩展。")
+    print('Local tray companion and launch entries removed. Remove the "Thunderbird Background" extension in Thunderbird.')
 
 
 if __name__ == "__main__":

@@ -1,15 +1,17 @@
 """Exercise launch completion against a local Wayland protocol peer."""
-from concurrent.futures import ThreadPoolExecutor
 import importlib.util
-from pathlib import Path
 import socket
 import struct
 import tempfile
 import unittest
+from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location("startup_launcher", ROOT / "native/show.py")
+if spec is None or spec.loader is None:
+    raise ImportError("Cannot load the startup launcher")
 launcher = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(launcher)
 
@@ -106,6 +108,16 @@ class StartupTests(unittest.TestCase):
                 patch.object(launcher.socket, "socket") as connect:
             self.assertFalse(launcher.complete_startup())
             connect.assert_not_called()
+
+    def test_missing_display_does_not_break_window_restoration(self):
+        with patch.dict(launcher.os.environ, {
+            "XDG_ACTIVATION_TOKEN": "launch_TIME123",
+            "WAYLAND_DISPLAY": "", "DISPLAY": "",
+        }), patch.object(launcher.subprocess, "run") as run, \
+                patch.object(launcher.os, "execv") as execute:
+            run.return_value.returncode = 0
+            self.assertEqual(launcher.main([]), 0)
+            execute.assert_not_called()
 
     def test_display_failure_does_not_break_window_restoration(self):
         with patch.dict(launcher.os.environ, {

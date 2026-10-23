@@ -3,19 +3,19 @@
 import argparse
 import ctypes
 import ctypes.util
-from datetime import datetime
 import fcntl
 import json
 import os
-from pathlib import Path
-import shutil
 import shlex
+import shutil
 import socket
 import struct
 import subprocess
 import tempfile
 import time
 import zipfile
+from datetime import datetime
+from pathlib import Path
 
 ADDON_ID = "background-local@thunderbird.local"
 ROOT = Path(__file__).resolve().parent

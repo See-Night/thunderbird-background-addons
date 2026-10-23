@@ -1,12 +1,12 @@
 #!/usr/bin/python3
 """Restore a background window, or start Thunderbird with the supplied arguments."""
 import os
-from pathlib import Path
 import shutil
 import socket
 import struct
 import subprocess
 import sys
+from pathlib import Path
 
 
 def complete_startup():
@@ -20,10 +20,13 @@ def complete_startup():
     try:
         if os.environ.get("WAYLAND_DISPLAY"):
             return complete_wayland_startup(tokens)
+        display_name = os.environ.get("DISPLAY")
+        if not display_name:
+            return False
         import gi
         gi.require_version("Gdk", "3.0")
-        from gi.repository import Gdk
-        display = Gdk.Display.open(os.environ.get("DISPLAY"))
+        from gi.repository import Gdk  # pyright: ignore[reportMissingModuleSource]
+        display = Gdk.Display.open(display_name)
         if display is None:
             return False
         try:

@@ -1,8 +1,8 @@
 {
   "manifest_version": 2,
-  "name": "Thunderbird 后台运行",
+  "name": "Thunderbird Background",
   "version": "1.1.4",
-  "description": "关闭最后一个邮件主窗口时隐藏到 Linux 托盘，保留后台收信；托盘不可用时最小化。",
+  "description": "Hide the last main mail window to the Linux tray while continuing to receive mail in the background; minimize if the tray is unavailable.",
   "browser_specific_settings": {
     "gecko": {
       "id": "background-local@thunderbird.local",

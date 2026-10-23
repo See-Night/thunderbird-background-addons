@@ -1,8 +1,8 @@
 import importlib.util
-from pathlib import Path
 import subprocess
 import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -10,6 +10,8 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def load(name, path):
     spec = importlib.util.spec_from_file_location(name, path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Cannot load {name} from {path}")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
@@ -67,6 +69,16 @@ class LauncherTests(unittest.TestCase):
 
 
 class DesktopTests(unittest.TestCase):
+    def __init__(self, methodName: str = "runTest") -> None:
+        super().__init__(methodName)
+        # unittest calls setUp before each test to initialize these fixtures.
+        self.temp: tempfile.TemporaryDirectory[str]
+        self.data: Path
+        self.system: Path
+        self.launcher: Path
+        self.target: Path
+        self.backup: Path
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix="thunderbird-dock-")
         self.addCleanup(self.temp.cleanup)

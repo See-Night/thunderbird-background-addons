@@ -1,19 +1,26 @@
 import importlib.util
 import io
 import json
-from pathlib import Path
 import struct
 import unittest
+from pathlib import Path
 from unittest.mock import patch
+
+from gi.repository import GLib  # pyright: ignore[reportMissingModuleSource]
 
 ROOT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location("host", ROOT / "native/host.py")
+if spec is None or spec.loader is None:
+    raise ImportError("Cannot load the native messaging host")
 host = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(host)
 
 
 class Invocation:
-    def return_value(self, value):
+    def __init__(self):
+        self.value: GLib.Variant | None = None
+
+    def return_value(self, value: GLib.Variant | None):
         self.value = value
 
     def return_dbus_error(self, name, message):
@@ -30,8 +37,10 @@ class HostTests(unittest.TestCase):
 
     def test_partial_reads_and_eof(self):
         class ShortReads(io.BytesIO):
-            def read(self, size):
-                return super().read(min(size, 2))
+            def read(self, size: int | None = -1, /) -> bytes:
+                return super().read(2 if size is None or size < 0 else min(size, 2))
+        self.assertEqual(ShortReads(b"abcd").read(), b"ab")
+        self.assertEqual(ShortReads(b"abcd").read(None), b"ab")
         stream = io.BytesIO()
         host.send_message({"action": "show"}, stream)
         self.assertEqual(host.read_message(ShortReads(stream.getvalue())), {"action": "show"})
@@ -56,7 +65,7 @@ class HostTests(unittest.TestCase):
         revision, layout = packed.unpack()
         self.assertEqual(revision, 1)
         self.assertEqual(len(layout[2]), 3)
-        self.assertEqual(layout[2][0][1]["label"], "显示 Thunderbird")
+        self.assertEqual(layout[2][0][1]["label"], "Show Thunderbird")
         self.assertEqual(h.layout(0, 0, [])[2], [])
         self.assertEqual(set(h.layout(1, 0, ["label"])[1]), {"label"})
 
@@ -86,7 +95,14 @@ class HostTests(unittest.TestCase):
                 invocation = Invocation()
                 h.method(None, None, None, "com.canonical.dbusmenu", method,
                          host.GLib.Variant(signature, args), invocation)
+                assert invocation.value is not None
                 self.assertEqual(invocation.value.get_type_string(), expected)
+
+    def test_uninitialized_resources_are_skipped(self):
+        h = host.Host()
+        h.watcher_owner = ":1.2"
+        self.assertEqual(h.register_watcher(h.generation), host.GLib.SOURCE_REMOVE)
+        self.assertIsNone(h.socket_reader())
 
     def test_watcher_disappearance_revokes_hide_permission(self):
         h = host.Host()
