@@ -6,3 +6,4 @@ __pycache__/
 /.aws/
 /.codex/
 /.zed/
+/.ruff_cache/
