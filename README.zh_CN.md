@@ -69,7 +69,7 @@ Thunderbird Background add-ons 是一款 Thunderbird（雷鸟）后台运行控�
 4. 在 Thunderbird 中打开 **附加组件和主题 → 齿轮图标 → 从文件安装附加组件**，选择：
 
    ```text
-   dist/thunderbird-background-1.0.0.xpi
+   dist/thunderbird-background-1.0.1.xpi
    ```
 
 5. 接受权限请求，确认托盘图标出现。正式依赖后台运行前，请测试关闭和恢复最后一个邮件主窗口。
@@ -85,11 +85,14 @@ Thunderbird Background add-ons 是一款 Thunderbird（雷鸟）后台运行控�
 | 操作                             | 效果                            |
 | ------------------------------ | ----------------------------- |
 | 关闭最后一个邮件主窗口                    | 隐藏到托盘；托盘不可用时最小化               |
+| 在邮件主窗口按 **Ctrl+Q** | 将当前窗口隐藏到后台；托盘不可用时最小化 |
 | 点击托盘图标或选择 **Show Thunderbird** | 恢复窗口                          |
 | 选择 **Hide to Background**      | 托盘可用时隐藏邮件主窗口                  |
 | 选择 **Quit Thunderbird**        | 请求正常退出，保留草稿确认                 |
 | 点击程序入口                         | 恢复已连接的实例，否则正常启动 Thunderbird   |
 | 点击需要在主窗口打开邮件的通知                | 恢复目标邮件主窗口，再由 Thunderbird 打开邮件 |
+
+仅邮件主窗口中的 **Ctrl+Q** 会改为后台隐藏，写信窗口不受影响。如需退出 Thunderbird，请使用程序菜单中的“退出”或托盘菜单中的 **Quit Thunderbird**，这些命令仍保留正常的草稿确认流程。
 
 通知中的“标为已读”“删除”等操作按钮保持原有行为。通知能否出现仍取决于 Thunderbird 账户首选项和桌面通知设置。
 
@@ -186,9 +189,10 @@ python3 install.py --build-only
 ```sh
 python3 tests/runtime_startup.py
 TBBG_TEST_NOTIFICATION=1 python3 tests/runtime_startup.py
+TBBG_TEST_QUIT_SHORTCUT=1 python3 tests/runtime_startup.py
 ```
 
-运行时检查会以无界面模式启动 Thunderbird，分别验证扩展首次启动和已注册后的再次启动。通知测试使用本地测试邮件调用 Thunderbird 实际的邮件通知回调，不向桌面发送通知。这些测试不使用真实账户或邮件，也不验证可见的桌面交互。
+运行时检查会以无界面模式启动 Thunderbird，分别验证扩展首次启动和已注册后的再次启动。通知测试使用本地测试邮件调用 Thunderbird 实际的邮件通知回调，不向桌面发送通知。快捷键测试会合成可信的 **Ctrl+Q** 输入，检查隐藏和最小化、菜单退出是否仍然可用，以及清理时能否恢复原快捷键。这些测试不使用真实账户或邮件，也不验证可见的桌面交互。
 
 ### 项目结构
 

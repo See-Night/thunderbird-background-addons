@@ -8,6 +8,7 @@ function harness(types = ["mail:3pane"], quiet = false, earlyStartup = false) {
   let cleanup;
   let watcher;
   const observers = new Map();
+  const quitTopics = [];
   const queue = [];
   const timers = new Map();
   const environment = new Map(quiet ? [["THUNDERBIRD_BACKGROUND_AUTOSTART", "1"]] : []);
@@ -20,28 +21,81 @@ function harness(types = ["mail:3pane"], quiet = false, earlyStartup = false) {
     },
   };
   const originalDisplayMessage = mailUtils.displayMessageInFolderTab;
-  function createWindow(type = "mail:3pane") {
-    const handlers = new Map();
-    const base = { visibility: true };
+  function eventTarget() {
+    const listeners = [];
+    const capture = options => typeof options === "boolean" ? options : !!options?.capture;
     return {
+      addEventListener(name, fn, options) {
+        if (!listeners.some(value => value.name === name && value.fn === fn &&
+            value.capture === capture(options))) {
+          listeners.push({ name, fn, capture: capture(options), once: !!options?.once });
+        }
+      },
+      removeEventListener(name, fn, options) {
+        const index = listeners.findIndex(value => value.name === name && value.fn === fn &&
+          value.capture === capture(options));
+        if (index !== -1) { listeners.splice(index, 1); }
+      },
+      listenerCount(name, useCapture) {
+        return listeners.filter(value => value.name === name &&
+          (useCapture === undefined || value.capture === useCapture)).length;
+      },
+      emit(name) {
+        const event = { type: name, target: this, currentTarget: this, prevented: false, stopped: false,
+          preventDefault() { this.prevented = true; },
+          stopImmediatePropagation() { this.stopped = true; } };
+        const matching = listeners.filter(value => value.name === name)
+          .sort((a, b) => Number(b.capture) - Number(a.capture));
+        for (const value of matching) {
+          if (!listeners.includes(value)) { continue; }
+          if (value.once) { this.removeEventListener(name, value.fn, value.capture); }
+          value.fn.call(this, event);
+          if (event.stopped) { break; }
+        }
+        return event;
+      },
+    };
+  }
+  function element(values) {
+    const attributes = new Map(Object.entries(values));
+    return {
+      ...eventTarget(),
+      hasAttribute(name) { return attributes.has(name); },
+      getAttribute(name) { return attributes.get(name) ?? ""; },
+      setAttribute(name, value) { attributes.set(name, String(value)); },
+      removeAttribute(name) { attributes.delete(name); },
+    };
+  }
+  function createWindow(type = "mail:3pane") {
+    const base = { visibility: true };
+    const elements = new Map([
+      ["key_quitApplication", element({ command: "cmd_quitApplication", reserved: "true", modifiers: "accel" })],
+      ["cmd_quitApplication", element({ oncommand: "goQuitApplication();" })],
+    ]);
+    const win = {
+      ...eventTarget(),
       closed: false, windowState: 0, STATE_MINIMIZED: 1, base, focused: false,
-      document: { documentElement: { getAttribute() { return type; } } },
+      document: { elements, readyState: "complete", documentElement: { getAttribute() { return type; } },
+        getElementById(id) { return elements.get(id) || null; } },
       docShell: { treeOwner: { QueryInterface() { return base; } } },
       minimize() { this.windowState = 1; },
       restore() { this.windowState = 0; },
       focus() { this.focused = true; },
       goQuitApplication() { scope.Services.startup.quit(); },
-      addEventListener(name, fn) { handlers.set(name, fn); },
-      removeEventListener(name) { handlers.delete(name); },
-      closeEvent() {
-        const event = { target: this, prevented: false, stopped: false,
-          preventDefault() { this.prevented = true; },
-          stopImmediatePropagation() { this.stopped = true; } };
-        handlers.get("close")?.(event);
-        return event;
+      closeEvent() { return this.emit("close"); },
+      quitShortcut() {
+        const key = elements.get("key_quitApplication");
+        if (!key) { return null; }
+        // XUL forwards command-backed keys directly; the key receives no command event.
+        if (key.hasAttribute("command")) {
+          return elements.get(key.getAttribute("command"))?.emit("command");
+        }
+        return key.emit("command");
       },
-      emit(name) { handlers.get(name)?.(); },
+      menuQuit() { return elements.get("cmd_quitApplication").emit("command"); },
     };
+    elements.get("cmd_quitApplication").addEventListener("command", () => win.goQuitApplication());
+    return win;
   }
   const windows = types.map(createWindow);
   const scope = {
@@ -76,11 +130,13 @@ function harness(types = ["mail:3pane"], quiet = false, earlyStartup = false) {
       tm: { dispatchToMainThread(fn) { queue.push(fn); } },
       startup: { quit() {
         notifyQuit(false);
+        quitTopics.push("quit-application-granted");
         observers.get("quit-application-granted")?.observe(null, "quit-application-granted");
       } },
     },
   };
   function notifyQuit(cancelled) {
+    quitTopics.push("quit-application-requested");
     observers.get("quit-application-requested")?.observe({
       QueryInterface() { return { data: cancelled }; },
     }, "quit-application-requested");
@@ -90,7 +146,7 @@ function harness(types = ["mail:3pane"], quiet = false, earlyStartup = false) {
   const instance = new scope.backgroundWindow();
   if (earlyStartup) { instance.onStartup(); }
   const api = instance.getAPI({ callOnClose(value) { cleanup = value; } }).backgroundWindow;
-  return { api, windows, createWindow, observers, queue, notifyQuit, timers, environment,
+  return { api, windows, createWindow, observers, queue, notifyQuit, quitTopics, timers, environment,
     mailUtils, displayCalls, displayResult, originalDisplayMessage,
     cleanup: () => cleanup.close(), addWindow(win) {
       windows.push(win);
@@ -136,6 +192,238 @@ test("compose windows are untouched and newly opened main windows are handled", 
   compose.closed = true;
   const main = h.createWindow(); h.addWindow(main);
   assert.equal(main.closeEvent().prevented, true);
+});
+test("native quit shortcuts forward to the shared command without dispatching on the key", () => {
+  const h = harness(); const win = h.windows[0];
+  const key = win.document.getElementById("key_quitApplication");
+  const command = win.document.getElementById("cmd_quitApplication");
+  let keyCommands = 0;
+  key.addEventListener("command", () => { keyCommands++; }, true);
+  assert.equal(win.quitShortcut().target, command);
+  assert.equal(win.menuQuit().target, command);
+  assert.equal(keyCommands, 0);
+  assert.deepEqual(h.quitTopics, ["quit-application-requested", "quit-application-granted",
+    "quit-application-requested", "quit-application-granted"]);
+});
+test("Ctrl+Q hides the current window with a tray without requesting Quit", async () => {
+  const h = harness(); await h.api.start(); await h.api.start(); await h.api.setTrayAvailable(true);
+  const win = h.windows[0]; const key = win.document.getElementById("key_quitApplication");
+  assert.equal(key.hasAttribute("command"), false);
+  assert.equal(key.hasAttribute("oncommand"), false);
+  assert.equal(key.getAttribute("reserved"), "true");
+  assert.equal(key.getAttribute("modifiers"), "accel");
+  assert.equal(key.listenerCount("command", true), 1);
+  let laterCommands = 0;
+  key.addEventListener("command", () => { laterCommands++; });
+  const event = win.quitShortcut();
+  assert.equal(event.target, key);
+  assert.ok(event.prevented && event.stopped);
+  assert.equal(laterCommands, 0);
+  assert.equal(win.base.visibility, false);
+  assert.equal(win.windowState, 0);
+  assert.deepEqual(h.quitTopics, []);
+});
+test("Ctrl+Q minimizes without a tray and does not request Quit", async () => {
+  const h = harness(); await h.api.start(); const win = h.windows[0];
+  const event = win.quitShortcut();
+  assert.ok(event.prevented && event.stopped);
+  assert.equal(win.windowState, 1);
+  assert.equal(win.base.visibility, true);
+  assert.deepEqual(h.quitTopics, []);
+  h.cleanup();
+  const key = win.document.getElementById("key_quitApplication");
+  assert.equal(key.getAttribute("command"), "cmd_quitApplication");
+  assert.equal(key.hasAttribute("oncommand"), false);
+  assert.equal(key.listenerCount("command"), 0);
+});
+test("Ctrl+Q affects only its main window even with multiple main windows", async () => {
+  const h = harness(["mail:3pane", "mail:3pane"]);
+  await h.api.start(); await h.api.setTrayAvailable(true);
+  const [first, second] = h.windows;
+  first.quitShortcut();
+  assert.equal(first.base.visibility, false);
+  assert.equal(second.base.visibility, true);
+  assert.equal(second.windowState, 0);
+  await h.api.show();
+  second.quitShortcut();
+  assert.equal(first.base.visibility, true);
+  assert.equal(first.windowState, 0);
+  assert.equal(second.base.visibility, false);
+  assert.deepEqual(h.quitTopics, []);
+});
+test("compose quit keys are untouched while dynamically opened main windows are hooked", async () => {
+  const h = harness(["msgcompose"]); await h.api.start(); await h.api.setTrayAvailable(true);
+  const compose = h.windows[0]; const key = compose.document.getElementById("key_quitApplication");
+  assert.equal(key.getAttribute("command"), "cmd_quitApplication");
+  assert.equal(key.hasAttribute("oncommand"), false);
+  assert.equal(key.listenerCount("command"), 0);
+  const main = h.createWindow(); h.addWindow(main);
+  main.quitShortcut();
+  assert.equal(main.base.visibility, false);
+  assert.equal(compose.base.visibility, true);
+  assert.equal(compose.windowState, 0);
+  assert.deepEqual(h.quitTopics, []);
+  compose.quitShortcut();
+  assert.deepEqual(h.quitTopics, ["quit-application-requested", "quit-application-granted"]);
+  assert.equal(compose.base.visibility, true);
+});
+test("menu Quit retains the shared command and granted Quit bypasses close interception", async () => {
+  const h = harness(); await h.api.start(); await h.api.setTrayAvailable(true);
+  const win = h.windows[0]; const command = win.document.getElementById("cmd_quitApplication");
+  assert.equal(command.getAttribute("oncommand"), "goQuitApplication();");
+  assert.equal(command.listenerCount("command"), 1);
+  const event = win.menuQuit();
+  assert.equal(event.target, command);
+  assert.equal(event.prevented, false);
+  assert.equal(event.stopped, false);
+  assert.deepEqual(h.quitTopics, ["quit-application-requested", "quit-application-granted"]);
+  while (h.queue.length) { h.queue.shift()(); }
+  assert.equal(win.closeEvent().prevented, false);
+  assert.equal(win.base.visibility, true);
+});
+test("disabling restores quit key attributes and removes only the add-on's listener", async () => {
+  const h = harness(); const win = h.windows[0];
+  const key = win.document.getElementById("key_quitApplication");
+  key.setAttribute("oncommand", "originalQuit();");
+  let otherCommands = 0;
+  key.addEventListener("command", () => { otherCommands++; });
+  await h.api.start(); await h.api.setTrayAvailable(true);
+  assert.equal(key.hasAttribute("oncommand"), false);
+  assert.equal(key.listenerCount("command", true), 1);
+  win.quitShortcut();
+  assert.equal(otherCommands, 0);
+  assert.equal(win.base.visibility, false);
+  h.cleanup();
+  assert.equal(win.base.visibility, true);
+  assert.equal(key.getAttribute("command"), "cmd_quitApplication");
+  assert.equal(key.getAttribute("oncommand"), "originalQuit();");
+  assert.equal(key.getAttribute("reserved"), "true");
+  assert.equal(key.getAttribute("modifiers"), "accel");
+  assert.equal(key.listenerCount("command", true), 0);
+  assert.equal(key.listenerCount("command"), 1);
+  const event = key.emit("command");
+  assert.equal(event.prevented, false);
+  assert.equal(otherCommands, 1);
+  assert.equal(win.base.visibility, true);
+  win.quitShortcut();
+  assert.deepEqual(h.quitTopics, ["quit-application-requested", "quit-application-granted"]);
+});
+test("window unload restores quit attributes including an empty oncommand and removes the hook", async () => {
+  const h = harness(); const win = h.windows[0];
+  const key = win.document.getElementById("key_quitApplication");
+  key.setAttribute("oncommand", "");
+  await h.api.start(); await h.api.setTrayAvailable(true);
+  assert.equal(key.listenerCount("command", true), 1);
+  win.closed = true; win.emit("unload");
+  assert.equal(key.getAttribute("command"), "cmd_quitApplication");
+  assert.equal(key.hasAttribute("oncommand"), true);
+  assert.equal(key.getAttribute("oncommand"), "");
+  assert.equal(key.listenerCount("command"), 0);
+  assert.equal(win.listenerCount("unload"), 0);
+  assert.equal(key.emit("command").prevented, false);
+  assert.equal(win.base.visibility, true);
+  assert.deepEqual(h.quitTopics, []);
+  h.cleanup();
+  assert.equal(key.hasAttribute("oncommand"), true);
+});
+test("quit hook cleanup preserves attributes subsequently changed by another extension", async () => {
+  for (const unload of [false, true]) {
+    for (const changes of [{ command: "other_quit" }, { oncommand: "otherQuit();" },
+      { command: "other_quit", oncommand: "otherQuit();" }, { command: "" }, { oncommand: "" }]) {
+      const h = harness(); await h.api.start();
+      const win = h.windows[0]; const key = win.document.getElementById("key_quitApplication");
+      assert.equal(key.listenerCount("command", true), 1);
+      for (const [name, value] of Object.entries(changes)) { key.setAttribute(name, value); }
+      if (unload) { win.closed = true; win.emit("unload"); } else { h.cleanup(); }
+      for (const [name, value] of Object.entries(changes)) {
+        assert.equal(key.hasAttribute(name), true);
+        assert.equal(key.getAttribute(name), value);
+      }
+      assert.equal(key.listenerCount("command"), 0);
+      assert.equal(key.emit("command").prevented, false);
+      assert.deepEqual(h.quitTopics, []);
+      if (unload) { h.cleanup(); }
+    }
+  }
+});
+test("a loading main window binds its late quit key without reattaching close interception", async () => {
+  const h = harness(); const win = h.windows[0];
+  win.document.readyState = "loading";
+  win.document.elements.delete("key_quitApplication");
+  await h.api.start(); await h.api.setTrayAvailable(true);
+  assert.equal(win.listenerCount("close"), 1);
+  assert.ok(win.closeEvent().prevented);
+  assert.equal(win.base.visibility, false);
+  await h.api.show();
+  assert.equal(win.listenerCount("load"), 1);
+  const key = h.createWindow().document.getElementById("key_quitApplication");
+  win.document.elements.set("key_quitApplication", key);
+  win.document.readyState = "complete"; win.emit("load");
+  assert.equal(win.listenerCount("load"), 0);
+  assert.equal(win.listenerCount("close"), 1);
+  assert.equal(key.hasAttribute("command"), false);
+  assert.equal(key.listenerCount("command", true), 1);
+  const event = win.quitShortcut();
+  assert.equal(event.target, key);
+  assert.ok(event.prevented && event.stopped);
+  assert.equal(win.base.visibility, false);
+  assert.deepEqual(h.quitTopics, []);
+  h.cleanup();
+  assert.equal(key.getAttribute("command"), "cmd_quitApplication");
+  assert.equal(key.hasAttribute("oncommand"), false);
+  assert.equal(key.listenerCount("command"), 0);
+});
+for (const action of ["cleanup", "unload"]) {
+  test(`${action} before load removes the pending quit listener and prevents a later hook`, async () => {
+    const h = harness(); const win = h.windows[0];
+    win.document.readyState = "loading";
+    win.document.elements.delete("key_quitApplication");
+    await h.api.start(); await h.api.setTrayAvailable(true);
+    assert.equal(win.listenerCount("close"), 1);
+    assert.equal(win.listenerCount("load"), 1);
+    if (action === "cleanup") { h.cleanup(); }
+    else { win.closed = true; win.emit("unload"); }
+    assert.equal(win.listenerCount("load"), 0);
+    const key = h.createWindow().document.getElementById("key_quitApplication");
+    win.document.elements.set("key_quitApplication", key);
+    win.document.readyState = "complete"; win.emit("load");
+    assert.equal(win.listenerCount("load"), 0);
+    assert.equal(key.getAttribute("command"), "cmd_quitApplication");
+    assert.equal(key.hasAttribute("oncommand"), false);
+    assert.equal(key.listenerCount("command"), 0);
+    assert.equal(key.emit("command").prevented, false);
+    assert.equal(win.base.visibility, true);
+    assert.deepEqual(h.quitTopics, []);
+    if (action === "unload") { h.cleanup(); }
+  });
+}
+test("missing or rebound quit keys are skipped without breaking close and menu Quit", async () => {
+  for (const binding of [null, undefined, "other_quit", ""]) {
+    const h = harness(); const win = h.windows[0];
+    const key = win.document.getElementById("key_quitApplication");
+    if (binding === null) { win.document.elements.delete("key_quitApplication"); }
+    else {
+      if (binding === undefined) { key.removeAttribute("command"); }
+      else { key.setAttribute("command", binding); }
+      key.setAttribute("oncommand", "otherQuit();");
+    }
+    await h.api.start(); await h.api.setTrayAvailable(true);
+    assert.equal(win.document.readyState, "complete");
+    assert.equal(win.listenerCount("load"), 0);
+    assert.equal(key.listenerCount("command"), 0);
+    assert.ok(win.closeEvent().prevented);
+    assert.equal(win.base.visibility, false);
+    await h.api.show();
+    win.menuQuit();
+    assert.deepEqual(h.quitTopics, ["quit-application-requested", "quit-application-granted"]);
+    assert.equal(win.closeEvent().prevented, false);
+    h.cleanup();
+    if (binding !== null) {
+      assert.equal(key.hasAttribute("command"), binding !== undefined);
+      assert.equal(key.getAttribute("command"), binding ?? "");
+      assert.equal(key.getAttribute("oncommand"), "otherQuit();");
+    }
+  }
 });
 test("Quit bypasses interception; cancelling Quit restores interception", async () => {
   const h = harness(); await h.api.start();

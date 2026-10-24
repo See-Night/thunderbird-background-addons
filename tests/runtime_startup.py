@@ -41,6 +41,7 @@ def main():
         result_file = profile / "runtime-result.json"
         probe = """  onStartup() {
     NOTIFICATION_PROBE
+    QUIT_SHORTCUT_PROBE
     const { setTimeout } = ChromeUtils.importESModule('resource://gre/modules/Timer.sys.mjs');
     setTimeout(async () => {
       const windows = [...Services.wm.getEnumerator('mail:3pane')].map(win => {
@@ -57,15 +58,21 @@ def main():
       if (Services.env.get('TBBG_TEST_NOTIFICATION') === '1') {
         notification = await checkNotificationClick(this);
       }
+      let quitShortcut = null;
+      if (Services.env.get('TBBG_TEST_QUIT_SHORTCUT') === '1') {
+        quitShortcut = await checkQuitShortcut(this);
+      }
       await IOUtils.writeJSON(RESULT_PATH, {
         applicationVersion: Services.appinfo.version,
         addon: {version: addon.version, isActive: addon.isActive, appDisabled: addon.appDisabled},
         windows,
         notification,
+        quitShortcut,
       });
     }, 8000);
 """.replace("RESULT_PATH", json.dumps(str(result_file))).replace(
-            "NOTIFICATION_PROBE", (ROOT / "tests/notification_probe.js").read_text())
+            "NOTIFICATION_PROBE", (ROOT / "tests/notification_probe.js").read_text()).replace(
+            "QUIT_SHORTCUT_PROBE", (ROOT / "tests/quit_shortcut_probe.js").read_text())
         addon = profile / "extensions/background-local@thunderbird.local.xpi"
         with zipfile.ZipFile(addon, "w", zipfile.ZIP_DEFLATED) as archive:
             for path in (ROOT / "addon").rglob("*"):
@@ -110,6 +117,15 @@ def main():
                             "hiddenBefore": True, "hiddenAfter": False, "selectedMessageCorrect": True,
                         }, "Notification did not restore the window and select its message"
                         print("Actual mail notification callback: restored window and selected message — PASS")
+                    if environment.get("TBBG_TEST_QUIT_SHORTCUT") == "1":
+                        assert result["quitShortcut"] == {
+                            "commandHidesWithTray": True, "keyboardHidesWithTray": True,
+                            "keyboardMinimizesWithoutTray": True, "shortcutQuitRequests": 0,
+                            "menuRequestsQuit": True, "restored": True,
+                            "restoredShortcutRequestsQuit": True, "menuUnchanged": True,
+                            "trustedKeyEvents": 2,
+                        }, "Quit shortcut interception or cleanup failed"
+                        print("Actual Ctrl+Q input and normal Quit command separation: PASS")
                     capture = os.environ.get("TBBG_TEST_CAPTURE")
                     if capture:
                         destination = Path(capture)

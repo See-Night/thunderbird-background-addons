@@ -88,6 +88,43 @@ var backgroundWindow = class extends ExtensionCommon.ExtensionAPI {
         win.minimize();
       }
     };
+    const bindQuitShortcut = win => {
+      const key = win.document.getElementById("key_quitApplication");
+      if (!key && win.document.readyState === "loading") {
+        // Early startup can attach before the document has parsed its keyset.
+        let restoreBinding = () => {};
+        const onLoad = () => { restoreBinding = bindQuitShortcut(win); };
+        win.addEventListener("load", onLoad, { once: true });
+        return () => {
+          win.removeEventListener("load", onLoad);
+          restoreBinding();
+        };
+      }
+      if (!key || key.getAttribute("command") !== "cmd_quitApplication") {
+        return () => {};
+      }
+      const attributes = new Map(["command", "oncommand"]
+        .map(name => [name, key.hasAttribute(name) ? key.getAttribute(name) : null]));
+      const onCommand = event => {
+        if (event.target !== key) { return; }
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        if (!quitting) { hide(win); }
+      };
+      // Rebind only the key: menus still use the original quit command.
+      // Without removing command, XUL forwards the event before key listeners.
+      key.removeAttribute("command");
+      key.removeAttribute("oncommand");
+      key.addEventListener("command", onCommand, true);
+      return () => {
+        key.removeEventListener("command", onCommand, true);
+        // Do not overwrite a binding installed later by another extension.
+        if (key.hasAttribute("command") || key.hasAttribute("oncommand")) { return; }
+        for (const [name, value] of attributes) {
+          if (value !== null) { key.setAttribute(name, value); }
+        }
+      };
+    };
     const suppressStartupWindow = win => {
       startupWindows.add(win);
       try {
@@ -135,6 +172,7 @@ var backgroundWindow = class extends ExtensionCommon.ExtensionAPI {
           win.document.documentElement.getAttribute("windowtype") !== "mail:3pane") {
         return;
       }
+      const restoreQuitShortcut = bindQuitShortcut(win);
       const onClose = event => {
         if (event.target !== win || quitting || windows().length > 1) {
           return;
@@ -144,12 +182,13 @@ var backgroundWindow = class extends ExtensionCommon.ExtensionAPI {
         hide(win);
       };
       const onUnload = () => {
+        restoreQuitShortcut();
         hidden.delete(win);
         handlers.delete(win);
       };
       win.addEventListener("close", onClose, true);
       win.addEventListener("unload", onUnload, { once: true });
-      handlers.set(win, { onClose, onUnload });
+      handlers.set(win, { onClose, onUnload, restoreQuitShortcut });
       if (startupWindows.has(win)) {
         suppressStartupWindow(win);
         Services.tm.dispatchToMainThread(() => {
@@ -175,7 +214,7 @@ var backgroundWindow = class extends ExtensionCommon.ExtensionAPI {
       onCloseWindow() {},
       onWindowTitleChange() {},
     };
-    // Quit, Ctrl+Q and session shutdown must bypass the close interception.
+    // Explicit Quit commands and session shutdown bypass close interception.
     const quitObserver = {
       observe(subject, topic) {
         if (topic === "quit-application-requested") {
@@ -209,7 +248,8 @@ var backgroundWindow = class extends ExtensionCommon.ExtensionAPI {
           win.removeEventListener("load", onLoad);
         }
         pending.clear();
-        for (const [win, { onClose, onUnload }] of handlers) {
+        for (const [win, { onClose, onUnload, restoreQuitShortcut }] of handlers) {
+          restoreQuitShortcut();
           win.removeEventListener("close", onClose, true);
           win.removeEventListener("unload", onUnload);
         }
